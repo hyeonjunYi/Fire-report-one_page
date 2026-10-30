@@ -28,3 +28,12 @@ https://img.newspim.com/news/2025/11/15/2511150945323690.jpg
 https://img.seoul.co.kr/img/upload/2025/11/17/SSC_20251117214548_O2.jpg
 
 사진의 저작권은 각 권리자에게 있습니다. 이 묶음은 제3자 사진의 재사용 허락을 부여하지 않습니다.
+
+## 추가 슬라이드 사진(3~5번)
+모두 위 서울신문 2025.11.17. 기사 본문에서 확인했습니다.
+3. assets/entrance.jpg — 붕괴된 출입구 / 서울신문·독자 제공 / 2025.11.16.
+https://img.seoul.co.kr/img/upload/2025/11/17/SSC_20251117214525_O2.jpg
+4. assets/structure.jpg — 무너져 내린 건물 / 서울신문·이종익 기자 / 2025.11.16.
+https://img.seoul.co.kr/img/upload/2025/11/17/SSC_20251117214604_O2.jpg
+5. assets/suppression.jpg — 화재 진화 작업 / 서울신문·이종익 기자 / 2025.11.15.
+https://img.seoul.co.kr/img/upload/2025/11/17/SSC_20251117214619_O2.jpg
