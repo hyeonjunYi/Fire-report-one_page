@@ -21,10 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const GH_CONFIG_KEY = 'field-report-github-config-v1';
   const GH_TOKEN_KEY = 'field-report-github-token-session-v1';
 
-  // --- 2. 상단 메뉴 5개 버튼 및 모달 안전 바인딩 ---
-  // (스크립트 오류와 무관하게 최우선 등록)
-
-  // (1) 연동설정 모달 열기/닫기
+  // --- 2. 상단 메뉴 5개 버튼 및 모달 바인딩 ---
   function openGithubModal() {
     if (!githubDialog) return;
     if (typeof githubDialog.showModal === 'function') {
@@ -52,13 +49,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (byId('openGithub')) byId('openGithub').onclick = openGithubModal;
   if (byId('closeGithub')) byId('closeGithub').onclick = closeGithubModal;
 
-  // (2) 새 사건 시작 / 기본 서식 불러오기
   function resetDraft(blank) {
-    if (!confirm('현재 작성 중인 내용과 사진을 초기화/교체할까요?')) return;
+    if (!confirm(blank ? '새로운 사건을 시작할까요? (현재 작성 내용이 비워집니다)' : '기본 서식으로 내용을 채울까요?')) return;
     if (form) form.reset();
     if (blank && form) {
       for (const field of form.querySelectorAll('input[name],textarea[name]')) {
-        if (!['author', 'unit'].includes(field.name)) field.value = '';
+        if (!['author', 'unit', 'phone'].includes(field.name)) field.value = '';
       }
     }
     photos = [];
@@ -69,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (byId('fresh')) byId('fresh').onclick = () => resetDraft(true);
   if (byId('sample')) byId('sample').onclick = () => resetDraft(false);
 
-  // (3) 백업 (.json)
   if (byId('backup')) {
     byId('backup').onclick = () => {
       const data = { fields: Object.fromEntries(new FormData(form)), photos };
@@ -83,7 +78,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // (4) 불러오기 (복원)
   const draftFile = byId('draftFile');
   if (byId('restore')) byId('restore').onclick = () => draftFile && draftFile.click();
   if (draftFile) {
@@ -109,14 +103,13 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // (5) 미리보기 닫기
   if (byId('closePreview')) {
     byId('closePreview').onclick = () => {
       if (previewSection) previewSection.hidden = true;
     };
   }
 
-  // --- 3. 사진 업로드 및 렌더링 ---
+  // --- 3. 사진 최적화 및 렌더링 (1MB 제한 준수) ---
   function esc(v){
     return String(v ?? '').replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -147,21 +140,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 사진을 웹 화면에 최적인 1100px / 0.70 퀄리티로 압축하여 1장당 60~100KB 수준 유지
   function readImage(file){
     return new Promise((resolve, reject) => {
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
-        const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const maxDim = 1100;
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL('image/jpeg', 0.82));
+        resolve(canvas.toDataURL('image/jpeg', 0.70));
       };
       img.onerror = reject;
       img.src = url;
+    });
+  }
+
+  // 기존에 저장된 사진이 대용량일 경우 배포 직전 재압축
+  function compressDataUrl(src) {
+    return new Promise((resolve) => {
+      if (!src || src.length < 250000) return resolve(src);
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1000;
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.65));
+      };
+      img.onerror = () => resolve(src);
+      img.src = src;
     });
   }
 
@@ -179,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // --- 4. IndexedDB 초안 자동저장 및 복원 ---
+  // --- 4. IndexedDB 자동저장 및 복원 ---
   function openDB(){
     return new Promise((res, rej) => {
       try {
@@ -223,7 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (form) form.addEventListener('input', saveDraft);
 
-  // --- 5. 보고서 HTML 렌더링 엔진 ---
+  // --- 5. 보고서 HTML 렌더링 ---
   function formData(){
     const d = Object.fromEntries(new FormData(form));
     d.photos = photos;
@@ -237,8 +253,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const gallery = images.length ? `<section class="gallery"><img id="scene" src="${images[0]}" alt="${esc(d.photos[0].caption)}"><div class="photo-shade"></div><div class="photo-caption"><span>현장기록사진 <b id="photoCount">01 / ${String(images.length).padStart(2,'0')}</b></span><p id="caption">${esc(d.photos[0].caption)}</p></div><div class="photo-controls"><button id="prev" aria-label="이전 사진">‹</button><button id="pause" aria-label="사진 자동전환 정지">Ⅱ</button><button id="next" aria-label="다음 사진">›</button></div></section>` : '';
     const tel = d.phone ? `<span>전화 <a href="tel:${esc(d.phone)}">${esc(d.phone)}</a></span>` : '';
     const date = (d.date || '').replaceAll('-', '.');
+    
+    // 초진/완진 시간 미입력 시 깔끔하게 처리
+    const timeStatus = (d.knockdown || d.extinguished) ? `${esc(d.knockdown || '-')} / ${esc(d.extinguished || '-')}` : '진행 중';
+    const kdTime = d.knockdown ? `<time>${esc(d.knockdown)}</time>` : '<time>-</time>';
+    const exTime = d.extinguished ? `<time>${esc(d.extinguished)}</time>` : '<time>-</time>';
 
-    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.title)} | 계룡소방서 현장대응단</title><style>${css}</style></head><body><header><div class="wrap"><b>계룡소방서 <span>현장대응단</span></b><button onclick="window.print()">인쇄 / PDF</button></div></header><main class="wrap"><div class="intro"><p class="eyebrow">FIRE INCIDENT BRIEFING · ${esc(date)}</p><div class="title-row"><h1>${esc(d.title)}<br><span>${esc(d.subtitle)}</span></h1><div class="complete"><small>진행상황</small><strong>${esc(d.status)}</strong><span>${esc(d.statusTime)}</span></div></div><p class="subtitle">${esc(d.target)} · ${esc(address)}</p></div>${gallery}<section class="stats"><div><small>신고 접수</small><strong>${esc(d.received)}</strong><span>${esc(date)}</span></div><div><small>초진 / 완진</small><strong>${esc(d.knockdown)} / ${esc(d.extinguished)}</strong><span>보고 시각</span></div><div><small>지원 출동</small><strong>${esc(d.unit)}</strong><span>${esc(d.crew)}</span></div><div><small>인명피해</small><strong>${esc(d.casualties)}</strong><span>상황보고 기준</span></div></section><div class="report-grid"><section class="panel"><p class="eyebrow">01 · INCIDENT OVERVIEW</p><h2>화재 개요</h2><dl><dt>대상</dt><dd>${esc(d.target)}</dd><dt>발생장소</dt><dd>${esc(address)}</dd>${map}<dt>상황</dt><dd>${esc(d.situation)}</dd><dt>피해·원인</dt><dd>${esc(d.damage)}</dd></dl></section><section class="panel"><p class="eyebrow">02 · RESPONSE</p><h2>출동대 현황</h2><div class="crew"><span>계룡소방서</span><strong>${esc(d.unit)}</strong><p>${esc(d.crew)}</p></div><dl><dt>출동지령</dt><dd>${esc(d.dispatch)}</dd><dt>선착대 도착</dt><dd>${esc(d.arrival)}</dd><dt>초진 / 완진</dt><dd>${esc(d.knockdown)} / ${esc(d.extinguished)}</dd><dt>활동사항</dt><dd>${esc(d.activity)}</dd></dl></section></div><section class="panel timeline-panel"><p class="eyebrow">03 · RESPONSE TIMELINE</p><h2>주요 대응 경과</h2><ol class="timeline"><li><time>${esc(d.received)}</time><strong>신고 접수</strong></li><li><time>${esc(d.dispatch)}</time><strong>출동지령</strong></li><li><time>${esc(d.arrival)}</time><strong>선착대 도착</strong></li><li><time>${esc(d.knockdown)}</time><strong>초진</strong></li><li><time>${esc(d.extinguished)}</time><strong>완진</strong></li></ol></section><footer><b>계룡소방서 현장대응단</b><p class="author-contact">작성자: ${esc(d.author)} ${tel}</p><p>최종 조사결과와 개별 대원 활동일지는 별도 확인이 필요합니다.</p></footer></main><script>(function(){const pics=${JSON.stringify(images)},caps=${JSON.stringify(d.photos.map(p=>p.caption||''))};if(!pics.length)return;let i=0,t=null;const im=document.getElementById('scene'),cap=document.getElementById('caption'),count=document.getElementById('photoCount'),pause=document.getElementById('pause');function show(n){i=(n+pics.length)%pics.length;im.src=pics[i];im.alt=caps[i]||'현장기록사진';cap.textContent=caps[i]||'현장기록사진';count.textContent=String(i+1).padStart(2,'0')+' / '+String(pics.length).padStart(2,'0')}function stop(){clearInterval(t);t=null;pause.textContent='▶'}function play(){stop();t=setInterval(()=>show(i+1),5000);pause.textContent='Ⅱ'}document.getElementById('prev').onclick=()=>{stop();show(i-1)};document.getElementById('next').onclick=()=>{stop();show(i+1)};pause.onclick=()=>t?stop():play();if(!matchMedia('(prefers-reduced-motion: reduce)').matches)play()})();<\/script></body></html>`;
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.title)} | 계룡소방서 현장대응단</title><style>${css}</style></head><body><header><div class="wrap"><b>계룡소방서 <span>현장대응단</span></b><button onclick="window.print()">인쇄 / PDF</button></div></header><main class="wrap"><div class="intro"><p class="eyebrow">FIRE INCIDENT BRIEFING · ${esc(date)}</p><div class="title-row"><h1>${esc(d.title)}<br><span>${esc(d.subtitle)}</span></h1><div class="complete"><small>진행상황</small><strong>${esc(d.status)}</strong><span>${esc(d.statusTime)}</span></div></div><p class="subtitle">${esc(d.target)} · ${esc(address)}</p></div>${gallery}<section class="stats"><div><small>신고 접수</small><strong>${esc(d.received || '-')}</strong><span>${esc(date)}</span></div><div><small>초진 / 완진</small><strong>${timeStatus}</strong><span>보고 시각</span></div><div><small>지원 출동</small><strong>${esc(d.unit)}</strong><span>${esc(d.crew)}</span></div><div><small>인명피해</small><strong>${esc(d.casualties || '없음')}</strong><span>상황보고 기준</span></div></section><div class="report-grid"><section class="panel"><p class="eyebrow">01 · INCIDENT OVERVIEW</p><h2>화재 개요</h2><dl><dt>대상</dt><dd>${esc(d.target)}</dd><dt>발생장소</dt><dd>${esc(address)}</dd>${map}<dt>상황</dt><dd>${esc(d.situation)}</dd><dt>피해·원인</dt><dd>${esc(d.damage || '조사 중')}</dd></dl></section><section class="panel"><p class="eyebrow">02 · RESPONSE</p><h2>출동대 현황</h2><div class="crew"><span>계룡소방서</span><strong>${esc(d.unit)}</strong><p>${esc(d.crew)}</p></div><dl><dt>출동지령</dt><dd>${esc(d.dispatch || '-')}</dd><dt>선착대 도착</dt><dd>${esc(d.arrival || '-')}</dd><dt>초진 / 완진</dt><dd>${timeStatus}</dd><dt>활동사항</dt><dd>${esc(d.activity || '현장 활동 중')}</dd></dl></section></div><section class="panel timeline-panel"><p class="eyebrow">03 · RESPONSE TIMELINE</p><h2>주요 대응 경과</h2><ol class="timeline"><li><time>${esc(d.received || '-')}</time><strong>신고 접수</strong></li><li><time>${esc(d.dispatch || '-')}</time><strong>출동지령</strong></li><li><time>${esc(d.arrival || '-')}</time><strong>선착대 도착</strong></li><li>${kdTime}<strong>초진</strong></li><li>${exTime}<strong>완진</strong></li></ol></section><footer><b>계룡소방서 현장대응단</b><p class="author-contact">작성자: ${esc(d.author)} ${tel}</p><p>최종 조사결과와 개별 대원 활동일지는 별도 확인이 필요합니다.</p></footer></main><script>(function(){const pics=${JSON.stringify(images)},caps=${JSON.stringify(d.photos.map(p=>p.caption||''))};if(!pics.length)return;let i=0,t=null;const im=document.getElementById('scene'),cap=document.getElementById('caption'),count=document.getElementById('photoCount'),pause=document.getElementById('pause');function show(n){i=(n+pics.length)%pics.length;im.src=pics[i];im.alt=caps[i]||'현장기록사진';cap.textContent=caps[i]||'현장기록사진';count.textContent=String(i+1).padStart(2,'0')+' / '+String(pics.length).padStart(2,'0')}function stop(){clearInterval(t);t=null;pause.textContent='▶'}function play(){stop();t=setInterval(()=>show(i+1),5000);pause.textContent='Ⅱ'}document.getElementById('prev').onclick=()=>{stop();show(i-1)};document.getElementById('next').onclick=()=>{stop();show(i+1)};pause.onclick=()=>t?stop():play();if(!matchMedia('(prefers-reduced-motion: reduce)').matches)play()})();<\/script></body></html>`;
   }
 
   async function output(download){
@@ -251,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       css = await (await fetch('style.css', { cache: 'no-store' })).text();
     } catch (e) {
-      console.warn('CSS 로드 실패, 기본 스타일 적용:', e);
+      console.warn('CSS 로드 실패, 기본 스타일 유지:', e);
     }
     const html = render(d, css);
 
@@ -273,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (byId('previewBtn')) byId('previewBtn').onclick = () => output(false);
   if (byId('downloadBtn')) byId('downloadBtn').onclick = () => output(true);
 
-  // --- 6. GitHub 연동 및 배포 로직 ---
+  // --- 6. GitHub API 통신 및 자동 배포 엔진 ---
   function setGhStatus(message, kind = ''){
     if (ghStatus) {
       ghStatus.textContent = message;
@@ -295,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getGhToken(){
-    const token = (ghToken ? ghToken.value.trim() : '') || sessionStorage.getItem(GH_TOKEN_KEY) || '';
+    const token = (ghToken ? ghToken.value.trim() : '') || sessionStorage.getItem(GH_TOKEN_KEY) || localStorage.getItem(GH_TOKEN_KEY) || '';
     if (!token) throw new Error('GitHub 토큰을 입력해 주세요.');
     return token;
   }
@@ -304,26 +325,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const c = getGhConfig();
     localStorage.setItem(GH_CONFIG_KEY, JSON.stringify(c));
     sessionStorage.setItem(GH_TOKEN_KEY, token);
+    localStorage.setItem(GH_TOKEN_KEY, token); // 새로고침/탭 재접속 시에도 유지
     if (ghToken) ghToken.value = token;
     return c;
   }
 
+  // Content-Type: application/json 자동 보장 함수
   async function ghRequest(url, token, options = {}){
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
     try {
+      const headers = {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(options.headers || {})
+      };
+      if (options.body && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+      }
+
       const res = await fetch(url, {
         ...options,
         signal: controller.signal,
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${token}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-          ...(options.headers || {})
-        }
+        headers
       });
+
       let data = {};
       try { data = await res.json(); } catch {}
+
       if (!res.ok) {
         const e = new Error(data.message || `GitHub 응답 오류 (${res.status})`);
         e.status = res.status;
@@ -339,20 +369,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function ghMessage(e){
-    if (e.status === 401) return '토큰이 잘못되었거나 만료되었습니다.';
-    if (e.status === 403) return '권한이 없습니다. Contents: Read and write 설정을 확인해 주세요.';
-    if (e.status === 404) return '저장소 또는 브랜치를 찾지 못했습니다.';
-    if (e.status === 409) return '저장소가 변경되어 충돌했습니다. 새로고침 후 다시 시도해 주세요.';
-    if (e.status === 422) return 'GitHub가 변경을 거부했습니다. 브랜치 보호 규칙을 확인해 주세요.';
+    if (e.status === 401) return '토큰이 잘못되었거나 만료되었습니다 (401).';
+    if (e.status === 403) return '권한이 없습니다 (403). 토큰의 Contents 권한이 "Read and write"인지 확인해 주세요.';
+    if (e.status === 404) return '저장소 또는 브랜치를 찾지 못했습니다 (404).';
+    if (e.status === 409) return '저장소 변경 충돌(409)입니다. 잠각 후 다시 시도해 주세요.';
+    if (e.status === 415) return '요청 형식(Content-Type) 오류입니다 (415).';
+    if (e.status === 422) return 'GitHub가 파일 저장을 거부했습니다 (422). 파일 크기(1MB 제한)나 브랜치 보호 규칙을 확인해 주세요.';
     return e.message || 'GitHub 연결 중 오류가 발생했습니다.';
-  }
-
-  function headersFor(token, accept = 'application/vnd.github+json'){
-    return {
-      Accept: accept,
-      Authorization: `Bearer ${token}`,
-      'X-GitHub-Api-Version': '2022-11-28'
-    };
   }
 
   async function verifyGh(){
@@ -365,13 +388,22 @@ document.addEventListener('DOMContentLoaded', () => {
     setGhStatus(`${c.owner}/${c.repo} · ${c.branch} 연결 확인 완료!`, 'success');
   }
 
+  // 모바일 콜스택 오버플로 방지용 FileReader 기반 인코딩
   function encodeBase64Utf8(value){
-    const bytes = new TextEncoder().encode(value);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += 32768) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
-    }
-    return btoa(binary);
+    return new Promise((resolve, reject) => {
+      try {
+        const blob = new Blob([value], { type: 'text/html;charset=utf-8' });
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          resolve(result.substring(result.indexOf(',') + 1));
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
   async function publishToGithub(){
@@ -387,6 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
       token = getGhToken();
     } catch(e) {
       setGhStatus(e.message, 'error');
+      alert(e.message);
       openGithubModal();
       return;
     }
@@ -398,46 +431,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       rememberGhConfig(token);
+
+      // 사진 용량 자동 점검 및 재압축
+      for (let i = 0; i < photos.length; i++) {
+        photos[i].src = await compressDataUrl(photos[i].src);
+      }
+
       let css = '';
       try {
         css = await (await fetch('style.css', { cache: 'no-store' })).text();
       } catch (err) {}
-      const html = render(formData(), css);
+
+      const d = formData();
+      const html = render(d, css);
       const byteLength = new TextEncoder().encode(html).length;
-      if (byteLength > 15 * 1024 * 1024) {
-        throw new Error('게시 파일이 15MB를 초과합니다. 사진을 줄여주세요.');
+
+      // GitHub Contents API 1MB 한도 보호
+      if (byteLength > 980 * 1024) {
+        throw new Error(`게시 파일 크기(${(byteLength/1024).toFixed(0)}KB)가 GitHub 1MB 한도를 초과합니다. 첨부 사진을 1~2장으로 줄여주세요.`);
       }
 
       const base = `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/index.html`;
+
+      // 브랜치 존재 검사
       await ghRequest(`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/branches/${encodeURIComponent(c.branch)}`, token);
 
+      // 기존 index.html의 SHA 확인 (표준 Accept 헤더 사용)
       let sha = null;
       try {
-        const file = await ghRequest(`${base}?ref=${encodeURIComponent(c.branch)}`, token, {
-          headers: headersFor(token, 'application/vnd.github.object+json')
-        });
-        sha = file.sha || null;
+        const file = await ghRequest(`${base}?ref=${encodeURIComponent(c.branch)}`, token);
+        sha = file && file.sha ? file.sha : null;
       } catch(e) {
         if (e.status !== 404) throw e;
       }
 
       const body = {
-        message: '현장 화재상황보고서 배포',
-        content: encodeBase64Utf8(html),
+        message: '현장 화재상황보고서 배포: ' + (d.title || '상황보고'),
+        content: await encodeBase64Utf8(html),
         branch: c.branch
       };
       if (sha) body.sha = sha;
 
+      // 파일 업로드/교체 (PUT)
       const result = await ghRequest(base, token, {
         method: 'PUT',
-        headers: headersFor(token),
         body: JSON.stringify(body)
       });
 
       const commit = result.commit && result.commit.sha ? result.commit.sha.slice(0, 7) : '';
-      setGhStatus(`배포 완료${commit ? ` (커밋: ${commit})` : ''}! Pages 반영까지 1~2분이 소요될 수 있습니다.`, 'success');
+      const successMsg = `배포 완료${commit ? ` (커밋: ${commit})` : ''}! GitHub Pages 반영까지 약 1~2분이 소요됩니다.`;
+      setGhStatus(successMsg, 'success');
+      alert(successMsg);
     } catch(e) {
-      setGhStatus(ghMessage(e), 'error');
+      const errMsg = ghMessage(e);
+      setGhStatus(errMsg, 'error');
+      alert(`배포 오류: ${errMsg}`);
     } finally {
       if (button) button.disabled = false;
     }
@@ -456,22 +504,22 @@ document.addEventListener('DOMContentLoaded', () => {
   if (byId('clearTokenBtn')) {
     byId('clearTokenBtn').onclick = () => {
       sessionStorage.removeItem(GH_TOKEN_KEY);
+      localStorage.removeItem(GH_TOKEN_KEY);
       if (ghToken) ghToken.value = '';
-      setGhStatus('GitHub 토큰을 세션에서 삭제했습니다.', '');
+      setGhStatus('저장된 GitHub 토큰을 모두 지웠습니다.', '');
     };
   }
 
   if (byId('publishBtn')) byId('publishBtn').onclick = publishToGithub;
 
-  // 로컬 스토리지에 저장된 설정 복원
+  // 설정 복원
   try {
     const saved = JSON.parse(localStorage.getItem(GH_CONFIG_KEY) || '{}');
     if (saved.owner && ghOwner) ghOwner.value = saved.owner;
     if (saved.repo && ghRepo) ghRepo.value = saved.repo;
     if (saved.branch && ghBranch) ghBranch.value = saved.branch;
-    if (ghToken) ghToken.value = sessionStorage.getItem(GH_TOKEN_KEY) || '';
+    if (ghToken) ghToken.value = sessionStorage.getItem(GH_TOKEN_KEY) || localStorage.getItem(GH_TOKEN_KEY) || '';
   } catch {}
 
-  // 초안 불러오기 실행
   loadDraft();
 });
