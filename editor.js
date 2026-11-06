@@ -12,7 +12,7 @@ function readImage(file){return new Promise((resolve,reject)=>{const img=new Ima
 photoInput.onchange=async()=>{for(const f of photoInput.files){if(photos.length>=8)break;try{photos.push({src:await readImage(f),caption:f.name.replace(/\.[^.]+$/,'')})}catch(e){}}photoInput.value='';renderPhotos();saveDraft()};form.addEventListener('input',saveDraft);document.getElementById('previewBtn').onclick=()=>output(false);document.getElementById('downloadBtn').onclick=()=>output(true);
 const GH_CONFIG_KEY='field-report-github-config-v1',GH_TOKEN_KEY='field-report-github-token-session-v1';
 const ghOwner=document.getElementById('ghOwner'),ghRepo=document.getElementById('ghRepo'),ghBranch=document.getElementById('ghBranch'),ghToken=document.getElementById('ghToken'),ghStatus=document.getElementById('githubStatus');
-function setGhStatus(message,kind=''){ghStatus.textContent=message;ghStatus.className='github-status '+kind}
+function setGhStatus(message,kind=''){ghStatus.textContent=message;document.getElementById('publishStatus').textContent=message;ghStatus.className='github-status '+kind}
 function getGhConfig(){const owner=ghOwner.value.trim(),repo=ghRepo.value.trim(),branch=ghBranch.value.trim();if(!/^[A-Za-z0-9-]+$/.test(owner)||!/^[A-Za-z0-9_.-]+$/.test(repo)||!branch||branch.includes('..')||branch.startsWith('/')||branch.endsWith('/'))throw new Error('GitHub 소유자, 저장소, 브랜치를 확인해 주세요.');return {owner,repo,branch}}
 function getGhToken(){const token=ghToken.value.trim()||sessionStorage.getItem(GH_TOKEN_KEY)||'';if(!token)throw new Error('GitHub 토큰을 입력해 주세요.');return token}
 function rememberGhConfig(token){const c=getGhConfig();localStorage.setItem(GH_CONFIG_KEY,JSON.stringify(c));sessionStorage.setItem(GH_TOKEN_KEY,token);ghToken.value=token;return c}
@@ -21,8 +21,61 @@ function ghMessage(e){if(e.status===401)return '토큰이 잘못되었거나 만
 function headersFor(token,accept='application/vnd.github+json'){return {Accept:accept,Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}}
 async function verifyGh(){const c=getGhConfig(),token=getGhToken();setGhStatus('GitHub 저장소와 브랜치에 접근 중…');const branch=encodeURIComponent(c.branch);await ghRequest(`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/branches/${branch}`,token);rememberGhConfig(token);setGhStatus(`${c.owner}/${c.repo} · ${c.branch} 연결을 확인했습니다.`, 'success')}
 function encodeBase64Utf8(value){const bytes=new TextEncoder().encode(value);let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(binary)}
-async function publishToGithub(){const button=document.getElementById('publishBtn');if(!form.report.checkValidity()){form.report.reportValidity();return}let c,token;try{c=getGhConfig();token=getGhToken()}catch(e){setGhStatus(e.message,'error');return}if(!confirm(`현재 보고서와 첨부 사진을 ${c.owner}/${c.repo} 저장소의 index.html로 게시합니다. 해당 저장소와 GitHub Pages를 보는 사람에게 공개됩니다. 계속할까요?`))return;button.disabled=true;setGhStatus('보고서 파일을 만들고 GitHub에 저장 중…');try{rememberGhConfig(token);const css=await(await fetch('style.css',{cache:'no-store'})).text();const html=render(formData(),css);const byteLength=new TextEncoder().encode(html).length;if(byteLength>15*1024*1024)throw new Error('게시 파일이 15MB를 넘습니다. 사진 수를 줄이거나 사진을 더 작게 선택해 주세요.');const base=`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/index.html`;await ghRequest(`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/branches/${encodeURIComponent(c.branch)}`,token);let sha=null;try{const file=await ghRequest(`${base}?ref=${encodeURIComponent(c.branch)}`,token,{headers:headersFor(token,'application/vnd.github.object+json')});sha=file.sha||null}catch(e){if(e.status!==404)throw e}const body={message:'현장 화재상황보고서 게시',content:encodeBase64Utf8(html),branch:c.branch};if(sha)body.sha=sha;const result=await ghRequest(base,token,{method:'PUT',headers:headersFor(token),body:JSON.stringify(body)});const commit=result.commit&&result.commit.sha?result.commit.sha.slice(0,7):'';setGhStatus(`GitHub 저장 완료${commit?` · 커밋 ${commit}`:''}. GitHub Pages 반영을 기다려 주세요.`, 'success')}catch(e){setGhStatus(ghMessage(e),'error')}finally{button.disabled=false}}
+async function publishToGithub(){const button=document.getElementById('publishBtn');if(!form.report.checkValidity()){form.report.reportValidity();return}let c,token;try{c=getGhConfig();token=getGhToken()}catch(e){setGhStatus(e.message,'error');githubDialog.showModal();return}if(!confirm(`현재 보고서와 첨부 사진을 ${c.owner}/${c.repo} 저장소의 index.html로 게시합니다. 해당 저장소와 GitHub Pages를 보는 사람에게 공개됩니다. 계속할까요?`))return;button.disabled=true;setGhStatus('보고서 파일을 만들고 GitHub에 저장 중…');try{rememberGhConfig(token);const css=await(await fetch('style.css',{cache:'no-store'})).text();const html=render(formData(),css);const byteLength=new TextEncoder().encode(html).length;if(byteLength>15*1024*1024)throw new Error('게시 파일이 15MB를 넘습니다. 사진 수를 줄이거나 사진을 더 작게 선택해 주세요.');const base=`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/index.html`;await ghRequest(`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/branches/${encodeURIComponent(c.branch)}`,token);let sha=null;try{const file=await ghRequest(`${base}?ref=${encodeURIComponent(c.branch)}`,token,{headers:headersFor(token,'application/vnd.github.object+json')});sha=file.sha||null}catch(e){if(e.status!==404)throw e}const body={message:'현장 화재상황보고서 게시',content:encodeBase64Utf8(html),branch:c.branch};if(sha)body.sha=sha;const result=await ghRequest(base,token,{method:'PUT',headers:headersFor(token),body:JSON.stringify(body)});const commit=result.commit&&result.commit.sha?result.commit.sha.slice(0,7):'';setGhStatus(`GitHub 저장 완료${commit?` · 커밋 ${commit}`:''}. GitHub Pages 반영을 기다려 주세요.`, 'success')}catch(e){setGhStatus(ghMessage(e),'error')}finally{button.disabled=false}}
 document.getElementById('saveGithubBtn').onclick=async()=>{try{await verifyGh()}catch(e){setGhStatus(ghMessage(e),'error')}};document.getElementById('clearTokenBtn').onclick=()=>{sessionStorage.removeItem(GH_TOKEN_KEY);ghToken.value='';setGhStatus('이 브라우저 탭의 GitHub 토큰을 지웠습니다.','')};document.getElementById('publishBtn').onclick=publishToGithub;
 try{const saved=JSON.parse(localStorage.getItem(GH_CONFIG_KEY)||'{}');if(saved.owner)ghOwner.value=saved.owner;if(saved.repo)ghRepo.value=saved.repo;if(saved.branch)ghBranch.value=saved.branch;ghToken.value=sessionStorage.getItem(GH_TOKEN_KEY)||''}catch{}
 loadDraft();
+
+const byId = id => document.getElementById(id);
+const githubDialog = byId('githubDialog');
+byId('openGithub').onclick = () => githubDialog.showModal();
+byId('closeGithub').onclick = () => githubDialog.close();
+byId('closePreview').onclick = () => { byId('previewSection').hidden = true; };
+function resetDraft(blank) {
+  if (!confirm('현재 초안과 사진을 교체할까요?')) return;
+  form.reset();
+  if (blank) {
+    for (const field of form.querySelectorAll('input[name],textarea[name]')) {
+      if (!['author', 'unit'].includes(field.name)) field.value = '';
+    }
+  }
+  photos = [];
+  renderPhotos();
+  saveDraft();
+}
+byId('fresh').onclick = () => resetDraft(true);
+byId('sample').onclick = () => resetDraft(false);
+byId('backup').onclick = () => {
+  const data = { fields: Object.fromEntries(new FormData(form)), photos };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'fire-report-draft.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+};
+const draftFile = byId('draftFile');
+byId('restore').onclick = () => draftFile.click();
+draftFile.onchange = async () => {
+  const file = draftFile.files[0];
+  draftFile.value = '';
+  if (!file) return;
+  try {
+    const { fields, photos: savedPhotos } = JSON.parse(await file.text());
+    if (!fields || typeof fields.title !== 'string' || !Array.isArray(savedPhotos) ||
+        savedPhotos.length > 8 || !savedPhotos.every(photo =>
+          typeof photo?.caption === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(photo.src))) {
+      throw new Error('올바른 보고서 백업 파일을 선택해 주세요.');
+    }
+    if (!confirm('현재 초안을 백업 파일의 내용으로 교체할까요?')) return;
+    for (const field of form.querySelectorAll('[name]')) {
+      if (typeof fields[field.name] === 'string') field.value = fields[field.name];
+    }
+    photos = savedPhotos;
+    renderPhotos();
+    saveDraft();
+  } catch (error) {
+    byId('publishStatus').textContent = error.message;
+  }
+};
 })();
