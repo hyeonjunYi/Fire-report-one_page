@@ -150,13 +150,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 업로드 시 1차 압축 (1000px, 0.65 퀄리티)
+  // [핵심] 선택 즉시 가로 800px, 압축률 0.55로 강력 압축 (장당 50~70KB 수준)
   function readImage(file){
     return new Promise((resolve, reject) => {
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
-        const maxDim = 1000;
+        const maxDim = 800;
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(img.width * scale);
@@ -164,41 +164,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL('image/jpeg', 0.65));
+        resolve(canvas.toDataURL('image/jpeg', 0.55));
       };
       img.onerror = reject;
       img.src = url;
     });
   }
 
-  // 총 사진 장수에 맞춘 동적 자동 압축 (8장이어도 800KB 이하 보장)
-  function compressDataUrlForCount(src, count) {
+  // 배포 직전 재압축 함수 (기존에 크게 들어간 사진이 있어도 강제 다이어트)
+  function compressDataUrlStrict(src, maxDim, quality) {
     return new Promise((resolve) => {
       if (!src) return resolve(src);
-      
-      // 장수에 따라 최적의 해상도 및 압축률 동적 계산
-      let targetDim = 950;
-      let targetQuality = 0.65;
-      if (count >= 7) {
-        targetDim = 720;
-        targetQuality = 0.52;
-      } else if (count >= 5) {
-        targetDim = 800;
-        targetQuality = 0.58;
-      } else if (count >= 3) {
-        targetDim = 880;
-        targetQuality = 0.62;
-      }
-
       const img = new Image();
       img.onload = () => {
-        const scale = Math.min(1, targetDim / Math.max(img.width, img.height));
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', targetQuality));
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = () => resolve(src);
       img.src = src;
@@ -207,6 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (photoInput) {
     photoInput.onchange = async () => {
+      setGhStatus('사진을 최적화 압축 중입니다…');
       for (const f of photoInput.files) {
         if (photos.length >= 8) break;
         try {
@@ -216,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
       photoInput.value = '';
       renderPhotos();
       saveDraft();
+      setGhStatus('');
     };
   }
 
@@ -264,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return d;
   }
 
-  // 중복 데이터를 완전히 제거한 초경량 렌더링 함수
+  // 중복 데이터를 완전히 제거한 초경량 렌더링
   function render(d, css){
     const address = d.address || '';
     const map = address ? `<div class="map-frame">
@@ -281,7 +268,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let gallery = '';
 
     if (count > 0) {
-      // 1. 숨김 템플릿(div)에 사진을 1회만 배치하여 스크립트 중복 데이터(JSON) 전면 제거
       const hiddenSlides = d.photos.map((p, idx) => 
         `<div class="photo-data-item" data-src="${p.src}" data-caption="${esc(p.caption || '현장기록사진')}"></div>`
       ).join('');
@@ -354,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const owner = ghOwner ? ghOwner.value.trim() : '';
     const repo = ghRepo ? ghRepo.value.trim() : '';
     const branch = ghBranch ? ghBranch.value.trim() : '';
-    if (!/^[A-Za-z0-9-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo) || !branch || branch.includes('..') || branch.startsWith('/') || branch.endsWith('/')) {
+    if (!/^[A-Za-z0-9-]+$/.test(owner) \vert{}\vert{} !/^[A-Za-z0-9_.-]+$/.test(repo) || !branch || branch.includes('..') || branch.startsWith('/') || branch.endsWith('/')) {
       throw new Error('GitHub 소유자, 저장소, 브랜치를 확인해 주세요.');
     }
     return { owner, repo, branch };
@@ -463,15 +449,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!confirm(`현재 보고서를 ${c.owner}/${c.repo} (${c.branch})의 index.html로 배포할까요?`)) return;
 
     if (button) button.disabled = true;
-    setGhStatus('보고서 파일을 생성하고 GitHub에 배포 중…');
+    setGhStatus('사진 용량 최적화 및 배포 준비 중…');
 
     try {
       rememberGhConfig(token);
 
-      // 총 등록된 사진 장수에 맞추어 고속 동적 압축
-      const photoCount = photos.length;
-      for (let i = 0; i < photoCount; i++) {
-        photos[i].src = await compressDataUrlForCount(photos[i].src, photoCount);
+      // [핵심] 장수별 2단계 안전 압축
+      const count = photos.length;
+      let targetDim = 750;
+      let targetQuality = 0.52;
+
+      if (count <= 2) {
+        targetDim = 850;
+        targetQuality = 0.60;
+      } else if (count <= 4) {
+        targetDim = 800;
+        targetQuality = 0.55;
+      } else { // 5~8장
+        targetDim = 700;
+        targetQuality = 0.48;
+      }
+
+      for (let i = 0; i < photos.length; i++) {
+        photos[i].src = await compressDataUrlStrict(photos[i].src, targetDim, targetQuality);
       }
 
       let css = '';
@@ -479,15 +479,26 @@ document.addEventListener('DOMContentLoaded', () => {
         css = await (await fetch('style.css', { cache: 'no-store' })).text();
       } catch (err) {}
 
-      const d = formData();
-      const html = render(d, css);
-      const byteLength = new TextEncoder().encode(html).length;
+      let d = formData();
+      let html = render(d, css);
+      let byteLength = new TextEncoder().encode(html).length;
 
-      // GitHub Contents API 1MB(1,048,576 bytes) 보호
-      if (byteLength > 980 * 1024) {
-        throw new Error(`게시 파일 크기(${(byteLength/1024).toFixed(0)}KB)가 1MB를 초과합니다. 사진을 1~2장 줄여주세요.`);
+      // 만약 8장을 채워 여전히 850KB를 초과할 경우 최종 3차 초압축 가동
+      if (byteLength > 850 * 1024) {
+        setGhStatus('대용량 사진 추가 압축 중…');
+        for (let i = 0; i < photos.length; i++) {
+          photos[i].src = await compressDataUrlStrict(photos[i].src, 620, 0.42);
+        }
+        d = formData();
+        html = render(d, css);
+        byteLength = new TextEncoder().encode(html).length;
       }
 
+      if (byteLength > 980 * 1024) {
+        throw new Error(`게시 파일 크기(${(byteLength/1024).toFixed(0)}KB)가 GitHub 1MB 한도를 초과합니다.`);
+      }
+
+      setGhStatus('GitHub에 전송 중…');
       const base = `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/index.html`;
 
       await ghRequest(`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/branches/${encodeURIComponent(c.branch)}`, token);
@@ -533,23 +544,4 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (byId('clearTokenBtn')) {
-    byId('clearTokenBtn').onclick = () => {
-      sessionStorage.removeItem(GH_TOKEN_KEY);
-      localStorage.removeItem(GH_TOKEN_KEY);
-      if (ghToken) ghToken.value = '';
-      setGhStatus('저장된 GitHub 토큰을 모두 지웠습니다.', '');
-    };
-  }
-
-  if (byId('publishBtn')) byId('publishBtn').onclick = publishToGithub;
-
-  try {
-    const saved = JSON.parse(localStorage.getItem(GH_CONFIG_KEY) || '{}');
-    if (saved.owner && ghOwner) ghOwner.value = saved.owner;
-    if (saved.repo && ghRepo) ghRepo.value = saved.repo;
-    if (saved.branch && ghBranch) ghBranch.value = saved.branch;
-    if (ghToken) ghToken.value = sessionStorage.getItem(GH_TOKEN_KEY) || localStorage.getItem(GH_TOKEN_KEY) || '';
-  } catch {}
-
-  loadDraft();
-});
+    byId('clearTokenBtn').onclick =
