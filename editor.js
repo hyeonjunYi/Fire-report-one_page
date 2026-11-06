@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const GH_CONFIG_KEY = 'field-report-github-config-v1';
   const GH_TOKEN_KEY = 'field-report-github-token-session-v1';
 
-  // 현재 시각 포맷 함수: yyyy.mm.dd. hh:mm
+  // 현재 시각 포맷: yyyy.mm.dd. hh:mm
   function getFormattedCurrentTime() {
     const now = new Date();
     const y = now.getFullYear();
@@ -31,7 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${y}.${m}.${d}. ${hh}:${mm}`;
   }
 
-  // 모달 제어
   function openGithubModal() {
     if (!githubDialog) return;
     if (typeof githubDialog.showModal === 'function') {
@@ -52,7 +51,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (byId('openGithub')) byId('openGithub').onclick = openGithubModal;
   if (byId('closeGithub')) byId('closeGithub').onclick = closeGithubModal;
 
-  // 새 사건 시작 / 기본 서식 불러오기
   function resetDraft(blank) {
     if (!confirm(blank ? '새로운 사건을 시작할까요? (현재 시각으로 세팅됩니다)' : '기본 서식으로 내용을 채울까요?')) return;
     if (form) form.reset();
@@ -62,13 +60,11 @@ document.addEventListener('DOMContentLoaded', () => {
       for (const field of form.querySelectorAll('input[name],textarea[name]')) {
         if (!['author', 'unit', 'phone'].includes(field.name)) field.value = '';
       }
-      // 시각 관련 항목에 현재시각 자동 입력
       const timeFields = ['statusTime', 'dispatch', 'knockdown', 'extinguished'];
       timeFields.forEach(name => {
         const el = form.elements.namedItem(name);
         if (el) el.value = nowStr;
       });
-      // 인명피해 기본값
       const cas = form.elements.namedItem('casualties');
       if (cas) cas.value = '없음';
     }
@@ -80,7 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (byId('fresh')) byId('fresh').onclick = () => resetDraft(true);
   if (byId('sample')) byId('sample').onclick = () => resetDraft(false);
 
-  // 백업(.json)
   if (byId('backup')) {
     byId('backup').onclick = () => {
       const data = { fields: Object.fromEntries(new FormData(form)), photos };
@@ -94,7 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // 복원
   const draftFile = byId('draftFile');
   if (byId('restore')) byId('restore').onclick = () => draftFile && draftFile.click();
   if (draftFile) {
@@ -254,9 +248,9 @@ document.addEventListener('DOMContentLoaded', () => {
     return d;
   }
 
-  // 최종 보고서 HTML 렌더링 함수
   function render(d, css){
-const address = d.address || '';
+    const address = d.address || '';
+    // 구글 지도 iframe 유지 + 하단 카카오맵·네이버 지도 텍스트 링크 배치
     const map = address ? `<div class="map-frame">
       <iframe title="화재 발생 현장 지도" src="https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed" loading="lazy"></iframe>
       <div class="map-links">
@@ -266,11 +260,10 @@ const address = d.address || '';
         <a href="https://map.naver.com/v5/search/${encodeURIComponent(address)}" target="_blank" rel="noopener">네이버 지도</a>
       </div>
     </div>` : '';
+
     const images = d.photos.map(x => x.src);
     const gallery = images.length ? `<section class="gallery"><img id="scene" src="${images[0]}" alt="${esc(d.photos[0].caption)}"><div class="photo-shade"></div><div class="photo-caption"><span>현장기록사진 <b id="photoCount">01 / ${String(images.length).padStart(2,'0')}</b></span><p id="caption">${esc(d.photos[0].caption)}</p></div><div class="photo-controls"><button id="prev" aria-label="이전 사진">‹</button><button id="pause" aria-label="사진 자동전환 정지">Ⅱ</button><button id="next" aria-label="다음 사진">›</button></div></section>` : '';
     const tel = d.phone ? `<span>전화 <a href="tel:${esc(d.phone)}">${esc(d.phone)}</a></span>` : '';
-    
-    // 발생일시 표시
     const statusTimeStr = d.statusTime || '-';
 
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.title)} | 계룡소방서 현장대응단</title><style>${css}</style></head><body><header><div class="wrap"><b>계룡소방서 <span>현장대응단</span></b><button onclick="window.print()">인쇄 / PDF</button></div></header><main class="wrap"><div class="intro"><p class="eyebrow">FIRE INCIDENT BRIEFING · ${esc(statusTimeStr)}</p><div class="title-row"><h1>${esc(d.title)}<br><span>${esc(d.subtitle)}</span></h1><div class="complete"><small>진행상황</small><strong>${esc(d.status)}</strong><span>${esc(statusTimeStr)}</span></div></div><p class="subtitle">${esc(d.target)} · ${esc(address)}</p></div>${gallery}<section class="stats"><div><small>발생일시</small><strong>${esc(statusTimeStr)}</strong><span>기준 시각</span></div><div><small>진행상황</small><strong>${esc(d.status)}</strong><span>현장 상태</span></div><div><small>지원 출동</small><strong>${esc(d.unit)}</strong><span>${esc(d.crew)}</span></div><div><small>인명피해</small><strong>${esc(d.casualties || '없음')}</strong><span>상황보고 기준</span></div></section><div class="report-grid"><section class="panel"><p class="eyebrow">01 · INCIDENT OVERVIEW</p><h2>발생장소 및 현황</h2><dl><dt>주소</dt><dd>${esc(address)}</dd>${map}<dt>대상물</dt><dd>${esc(d.target)}</dd><dt>재난상황</dt><dd>${esc(d.situation)}</dd><dt>인명피해</dt><dd>${esc(d.casualties || '없음')}</dd><dt>원인</dt><dd>${esc(d.damage || '조사 중')}</dd></dl></section><section class="panel"><p class="eyebrow">02 · RESPONSE</p><h2>출동대 현황</h2><div class="crew"><span>계룡소방서</span><strong>${esc(d.unit)}</strong><p>${esc(d.crew)}</p></div><dl><dt>출동지령</dt><dd>${esc(d.dispatch || '-')}</dd><dt>초진일시</dt><dd>${esc(d.knockdown || '-')}</dd><dt>완진일시</dt><dd>${esc(d.extinguished || '-')}</dd><dt>활동사항</dt><dd>${esc(d.activity || '현장 활동 중')}</dd></dl></section></div><section class="panel timeline-panel"><p class="eyebrow">03 · RESPONSE TIMELINE</p><h2>주요 대응 경과</h2><ol class="timeline"><li><time>${esc(d.dispatch || '-')}</time><strong>출동지령</strong></li><li><time>${esc(d.knockdown || '-')}</time><strong>초진</strong></li><li><time>${esc(d.extinguished || '-')}</time><strong>완진</strong></li></ol></section><footer><b>계룡소방서 현장대응단</b><p class="author-contact">작성자: ${esc(d.author)} ${tel}</p><p>최종 조사결과와 개별 대원 활동일지는 별도 확인이 필요합니다.</p></footer></main><script>(function(){const pics=${JSON.stringify(images)},caps=${JSON.stringify(d.photos.map(p=>p.caption||''))};if(!pics.length)return;let i=0,t=null;const im=document.getElementById('scene'),cap=document.getElementById('caption'),count=document.getElementById('photoCount'),pause=document.getElementById('pause');function show(n){i=(n+pics.length)%pics.length;im.src=pics[i];im.alt=caps[i]||'현장기록사진';cap.textContent=caps[i]||'현장기록사진';count.textContent=String(i+1).padStart(2,'0')+' / '+String(pics.length).padStart(2,'0')}function stop(){clearInterval(t);t=null;pause.textContent='▶'}function play(){stop();t=setInterval(()=>show(i+1),5000);pause.textContent='Ⅱ'}document.getElementById('prev').onclick=()=>{stop();show(i-1)};document.getElementById('next').onclick=()=>{stop();show(i+1)};pause.onclick=()=>t?stop():play();if(!matchMedia('(prefers-reduced-motion: reduce)').matches)play()})();<\/script></body></html>`;
@@ -308,7 +301,6 @@ const address = d.address || '';
   if (byId('previewBtn')) byId('previewBtn').onclick = () => output(false);
   if (byId('downloadBtn')) byId('downloadBtn').onclick = () => output(true);
 
-  // GitHub 배포
   function setGhStatus(message, kind = ''){
     if (ghStatus) {
       ghStatus.textContent = message;
