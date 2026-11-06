@@ -150,30 +150,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 업로드 시 1차 압축 (1000px, 0.65 퀄리티)
   function readImage(file){
     return new Promise((resolve, reject) => {
       const img = new Image();
       const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const maxDim = 1100;
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL('image/jpeg', 0.70));
-      };
-      img.onerror = reject;
-      img.src = url;
-    });
-  }
-
-  function compressDataUrl(src) {
-    return new Promise((resolve) => {
-      if (!src || src.length < 250000) return resolve(src);
-      const img = new Image();
       img.onload = () => {
         const maxDim = 1000;
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
@@ -182,7 +163,42 @@ document.addEventListener('DOMContentLoaded', () => {
         canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
         resolve(canvas.toDataURL('image/jpeg', 0.65));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  // 총 사진 장수에 맞춘 동적 자동 압축 (8장이어도 800KB 이하 보장)
+  function compressDataUrlForCount(src, count) {
+    return new Promise((resolve) => {
+      if (!src) return resolve(src);
+      
+      // 장수에 따라 최적의 해상도 및 압축률 동적 계산
+      let targetDim = 950;
+      let targetQuality = 0.65;
+      if (count >= 7) {
+        targetDim = 720;
+        targetQuality = 0.52;
+      } else if (count >= 5) {
+        targetDim = 800;
+        targetQuality = 0.58;
+      } else if (count >= 3) {
+        targetDim = 880;
+        targetQuality = 0.62;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, targetDim / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', targetQuality));
       };
       img.onerror = () => resolve(src);
       img.src = src;
@@ -248,9 +264,9 @@ document.addEventListener('DOMContentLoaded', () => {
     return d;
   }
 
+  // 중복 데이터를 완전히 제거한 초경량 렌더링 함수
   function render(d, css){
     const address = d.address || '';
-    // 구글 지도 iframe 유지 + 하단 카카오맵·네이버 지도 텍스트 링크 배치
     const map = address ? `<div class="map-frame">
       <iframe title="화재 발생 현장 지도" src="https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed" loading="lazy"></iframe>
       <div class="map-links">
@@ -261,12 +277,35 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     </div>` : '';
 
-    const images = d.photos.map(x => x.src);
-    const gallery = images.length ? `<section class="gallery"><img id="scene" src="${images[0]}" alt="${esc(d.photos[0].caption)}"><div class="photo-shade"></div><div class="photo-caption"><span>현장기록사진 <b id="photoCount">01 / ${String(images.length).padStart(2,'0')}</b></span><p id="caption">${esc(d.photos[0].caption)}</p></div><div class="photo-controls"><button id="prev" aria-label="이전 사진">‹</button><button id="pause" aria-label="사진 자동전환 정지">Ⅱ</button><button id="next" aria-label="다음 사진">›</button></div></section>` : '';
+    const count = d.photos.length;
+    let gallery = '';
+
+    if (count > 0) {
+      // 1. 숨김 템플릿(div)에 사진을 1회만 배치하여 스크립트 중복 데이터(JSON) 전면 제거
+      const hiddenSlides = d.photos.map((p, idx) => 
+        `<div class="photo-data-item" data-src="${p.src}" data-caption="${esc(p.caption || '현장기록사진')}"></div>`
+      ).join('');
+
+      gallery = `<section class="gallery">
+        <img id="scene" src="${d.photos[0].src}" alt="${esc(d.photos[0].caption)}">
+        <div class="photo-shade"></div>
+        <div class="photo-caption">
+          <span>현장기록사진 <b id="photoCount">01 / ${String(count).padStart(2,'0')}</b></span>
+          <p id="caption">${esc(d.photos[0].caption)}</p>
+        </div>
+        <div class="photo-controls">
+          <button id="prev" aria-label="이전 사진">‹</button>
+          <button id="pause" aria-label="사진 자동전환 정지">Ⅱ</button>
+          <button id="next" aria-label="다음 사진">›</button>
+        </div>
+        <div id="photoStore" style="display:none;">${hiddenSlides}</div>
+      </section>`;
+    }
+
     const tel = d.phone ? `<span>전화 <a href="tel:${esc(d.phone)}">${esc(d.phone)}</a></span>` : '';
     const statusTimeStr = d.statusTime || '-';
 
-    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.title)} | 계룡소방서 현장대응단</title><style>${css}</style></head><body><header><div class="wrap"><b>계룡소방서 <span>현장대응단</span></b><button onclick="window.print()">인쇄 / PDF</button></div></header><main class="wrap"><div class="intro"><p class="eyebrow">FIRE INCIDENT BRIEFING · ${esc(statusTimeStr)}</p><div class="title-row"><h1>${esc(d.title)}<br><span>${esc(d.subtitle)}</span></h1><div class="complete"><small>진행상황</small><strong>${esc(d.status)}</strong><span>${esc(statusTimeStr)}</span></div></div><p class="subtitle">${esc(d.target)} · ${esc(address)}</p></div>${gallery}<section class="stats"><div><small>발생일시</small><strong>${esc(statusTimeStr)}</strong><span>기준 시각</span></div><div><small>진행상황</small><strong>${esc(d.status)}</strong><span>현장 상태</span></div><div><small>지원 출동</small><strong>${esc(d.unit)}</strong><span>${esc(d.crew)}</span></div><div><small>인명피해</small><strong>${esc(d.casualties || '없음')}</strong><span>상황보고 기준</span></div></section><div class="report-grid"><section class="panel"><p class="eyebrow">01 · INCIDENT OVERVIEW</p><h2>발생장소 및 현황</h2><dl><dt>주소</dt><dd>${esc(address)}</dd>${map}<dt>대상물</dt><dd>${esc(d.target)}</dd><dt>재난상황</dt><dd>${esc(d.situation)}</dd><dt>인명피해</dt><dd>${esc(d.casualties || '없음')}</dd><dt>원인</dt><dd>${esc(d.damage || '조사 중')}</dd></dl></section><section class="panel"><p class="eyebrow">02 · RESPONSE</p><h2>출동대 현황</h2><div class="crew"><span>계룡소방서</span><strong>${esc(d.unit)}</strong><p>${esc(d.crew)}</p></div><dl><dt>출동지령</dt><dd>${esc(d.dispatch || '-')}</dd><dt>초진일시</dt><dd>${esc(d.knockdown || '-')}</dd><dt>완진일시</dt><dd>${esc(d.extinguished || '-')}</dd><dt>활동사항</dt><dd>${esc(d.activity || '현장 활동 중')}</dd></dl></section></div><section class="panel timeline-panel"><p class="eyebrow">03 · RESPONSE TIMELINE</p><h2>주요 대응 경과</h2><ol class="timeline"><li><time>${esc(d.dispatch || '-')}</time><strong>출동지령</strong></li><li><time>${esc(d.knockdown || '-')}</time><strong>초진</strong></li><li><time>${esc(d.extinguished || '-')}</time><strong>완진</strong></li></ol></section><footer><b>계룡소방서 현장대응단</b><p class="author-contact">작성자: ${esc(d.author)} ${tel}</p><p>최종 조사결과와 개별 대원 활동일지는 별도 확인이 필요합니다.</p></footer></main><script>(function(){const pics=${JSON.stringify(images)},caps=${JSON.stringify(d.photos.map(p=>p.caption||''))};if(!pics.length)return;let i=0,t=null;const im=document.getElementById('scene'),cap=document.getElementById('caption'),count=document.getElementById('photoCount'),pause=document.getElementById('pause');function show(n){i=(n+pics.length)%pics.length;im.src=pics[i];im.alt=caps[i]||'현장기록사진';cap.textContent=caps[i]||'현장기록사진';count.textContent=String(i+1).padStart(2,'0')+' / '+String(pics.length).padStart(2,'0')}function stop(){clearInterval(t);t=null;pause.textContent='▶'}function play(){stop();t=setInterval(()=>show(i+1),5000);pause.textContent='Ⅱ'}document.getElementById('prev').onclick=()=>{stop();show(i-1)};document.getElementById('next').onclick=()=>{stop();show(i+1)};pause.onclick=()=>t?stop():play();if(!matchMedia('(prefers-reduced-motion: reduce)').matches)play()})();<\/script></body></html>`;
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.title)} | 계룡소방서 현장대응단</title><style>${css}</style></head><body><header><div class="wrap"><b>계룡소방서 <span>현장대응단</span></b><button onclick="window.print()">인쇄 / PDF</button></div></header><main class="wrap"><div class="intro"><p class="eyebrow">FIRE INCIDENT BRIEFING · ${esc(statusTimeStr)}</p><div class="title-row"><h1>${esc(d.title)}<br><span>${esc(d.subtitle)}</span></h1><div class="complete"><small>진행상황</small><strong>${esc(d.status)}</strong><span>${esc(statusTimeStr)}</span></div></div><p class="subtitle">${esc(d.target)} · ${esc(address)}</p></div>${gallery}<section class="stats"><div><small>발생일시</small><strong>${esc(statusTimeStr)}</strong><span>기준 시각</span></div><div><small>진행상황</small><strong>${esc(d.status)}</strong><span>현장 상태</span></div><div><small>지원 출동</small><strong>${esc(d.unit)}</strong><span>${esc(d.crew)}</span></div><div><small>인명피해</small><strong>${esc(d.casualties || '없음')}</strong><span>상황보고 기준</span></div></section><div class="report-grid"><section class="panel"><p class="eyebrow">01 · INCIDENT OVERVIEW</p><h2>발생장소 및 현황</h2><dl><dt>주소</dt><dd>${esc(address)}</dd>${map}<dt>대상물</dt><dd>${esc(d.target)}</dd><dt>재난상황</dt><dd>${esc(d.situation)}</dd><dt>인명피해</dt><dd>${esc(d.casualties || '없음')}</dd><dt>원인</dt><dd>${esc(d.damage || '조사 중')}</dd></dl></section><section class="panel"><p class="eyebrow">02 · RESPONSE</p><h2>출동대 현황</h2><div class="crew"><span>계룡소방서</span><strong>${esc(d.unit)}</strong><p>${esc(d.crew)}</p></div><dl><dt>출동지령</dt><dd>${esc(d.dispatch || '-')}</dd><dt>초진일시</dt><dd>${esc(d.knockdown || '-')}</dd><dt>완진일시</dt><dd>${esc(d.extinguished || '-')}</dd><dt>활동사항</dt><dd>${esc(d.activity || '현장 활동 중')}</dd></dl></section></div><section class="panel timeline-panel"><p class="eyebrow">03 · RESPONSE TIMELINE</p><h2>주요 대응 경과</h2><ol class="timeline"><li><time>${esc(d.dispatch || '-')}</time><strong>출동지령</strong></li><li><time>${esc(d.knockdown || '-')}</time><strong>초진</strong></li><li><time>${esc(d.extinguished || '-')}</time><strong>완진</strong></li></ol></section><footer><b>계룡소방서 현장대응단</b><p class="author-contact">작성자: ${esc(d.author)} ${tel}</p><p>최종 조사결과와 개별 대원 활동일지는 별도 확인이 필요합니다.</p></footer></main><script>(function(){const items=document.querySelectorAll('#photoStore .photo-data-item');if(!items.length)return;const pics=[],caps=[];items.forEach(el=>{pics.push(el.getAttribute('data-src'));caps.push(el.getAttribute('data-caption'));});let i=0,t=null;const im=document.getElementById('scene'),cap=document.getElementById('caption'),count=document.getElementById('photoCount'),pause=document.getElementById('pause');function show(n){i=(n+pics.length)%pics.length;im.src=pics[i];im.alt=caps[i]||'현장기록사진';cap.textContent=caps[i]||'현장기록사진';count.textContent=String(i+1).padStart(2,'0')+' / '+String(pics.length).padStart(2,'0')}function stop(){clearInterval(t);t=null;pause.textContent='▶'}function play(){stop();t=setInterval(()=>show(i+1),5000);pause.textContent='Ⅱ'}document.getElementById('prev').onclick=()=>{stop();show(i-1)};document.getElementById('next').onclick=()=>{stop();show(i+1)};pause.onclick=()=>t?stop():play();if(!matchMedia('(prefers-reduced-motion: reduce)').matches)play()})();<\/script></body></html>`;
   }
 
   async function output(download){
@@ -429,8 +468,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       rememberGhConfig(token);
 
-      for (let i = 0; i < photos.length; i++) {
-        photos[i].src = await compressDataUrl(photos[i].src);
+      // 총 등록된 사진 장수에 맞추어 고속 동적 압축
+      const photoCount = photos.length;
+      for (let i = 0; i < photoCount; i++) {
+        photos[i].src = await compressDataUrlForCount(photos[i].src, photoCount);
       }
 
       let css = '';
@@ -442,8 +483,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = render(d, css);
       const byteLength = new TextEncoder().encode(html).length;
 
+      // GitHub Contents API 1MB(1,048,576 bytes) 보호
       if (byteLength > 980 * 1024) {
-        throw new Error(`게시 파일 크기(${(byteLength/1024).toFixed(0)}KB)가 GitHub 1MB 한도를 초과합니다. 첨부 사진을 줄여주세요.`);
+        throw new Error(`게시 파일 크기(${(byteLength/1024).toFixed(0)}KB)가 1MB를 초과합니다. 사진을 1~2장 줄여주세요.`);
       }
 
       const base = `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/index.html`;
@@ -471,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const commit = result.commit && result.commit.sha ? result.commit.sha.slice(0, 7) : '';
-      const successMsg = `배포 완료${commit ? ` (커밋: ${commit})` : ''}! GitHub Pages 반영까지 약 1~2분이 소요됩니다.`;
+      const successMsg = `배포 완료${commit ? ` (커밋: ${commit})` : ''}! (파일 크기: ${(byteLength/1024).toFixed(0)}KB)`;
       setGhStatus(successMsg, 'success');
       alert(successMsg);
     } catch(e) {
