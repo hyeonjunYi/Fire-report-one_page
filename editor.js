@@ -256,8 +256,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 최종 보고서 HTML 렌더링 함수
   function render(d, css){
-    const address = d.address || '';
-    const map = address ? `<div class="map-frame"><iframe title="화재 발생 현장 지도" src="https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed" loading="lazy"></iframe></div>` : '';
+const address = d.address || '';
+    const map = address ? `<div class="map-frame">
+      <iframe title="화재 발생 현장 지도" src="https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed" loading="lazy"></iframe>
+      <div class="map-links">
+        <span class="map-links-label">지도 바로가기 :</span>
+        <a href="https://map.kakao.com/link/search/${encodeURIComponent(address)}" target="_blank" rel="noopener">카카오맵</a>
+        <span class="sep">·</span>
+        <a href="https://map.naver.com/v5/search/${encodeURIComponent(address)}" target="_blank" rel="noopener">네이버 지도</a>
+      </div>
+    </div>` : '';
     const images = d.photos.map(x => x.src);
     const gallery = images.length ? `<section class="gallery"><img id="scene" src="${images[0]}" alt="${esc(d.photos[0].caption)}"><div class="photo-shade"></div><div class="photo-caption"><span>현장기록사진 <b id="photoCount">01 / ${String(images.length).padStart(2,'0')}</b></span><p id="caption">${esc(d.photos[0].caption)}</p></div><div class="photo-controls"><button id="prev" aria-label="이전 사진">‹</button><button id="pause" aria-label="사진 자동전환 정지">Ⅱ</button><button id="next" aria-label="다음 사진">›</button></div></section>` : '';
     const tel = d.phone ? `<span>전화 <a href="tel:${esc(d.phone)}">${esc(d.phone)}</a></span>` : '';
