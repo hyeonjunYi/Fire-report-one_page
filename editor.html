@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#052b57"><title>현장 화재보고서 작성</title><link rel="stylesheet" href="editor.css?v=4"></head><body>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#052b57"><title>현장 화재보고서 작성</title><link rel="stylesheet" href="editor.css?v=5"></head><body>
 <header class="app-header"><div class="editor-wrap"><strong>계룡소방서 현장대응단</strong><span>현장 화재보고서 작성</span></div></header>
 <main class="editor-wrap"><div class="page-title"><p class="eyebrow">FIRE REPORT EDITOR</p><h1>화재상황보고서 작성</h1><p>현장에서 내용을 입력하고 미리보기한 뒤 GitHub Pages에 게시합니다.</p></div>
 <div class="notice" role="status">작성 내용과 사진은 브라우저에 임시 저장됩니다. [새 사건 시작] 클릭 시 현재 시각이 자동으로 입력됩니다.</div>
@@ -75,7 +75,8 @@
 
 <section class="form-section">
   <h2>04 현장기록사진</h2>
-  <label class="upload">사진 선택<input id="photoInput" type="file" accept="image/*" capture="environment" multiple><span>촬영하거나 사진을 선택합니다. (게시용 자동 최적화)</span></label>
+  <!-- capture 속성을 제거하여 카메라와 사진 앨범(갤러리) 모두 선택 가능하도록 수정 -->
+  <label class="upload">사진 선택<input id="photoInput" type="file" accept="image/*" multiple><span>휴대폰 카메라로 촬영하거나 앨범에서 사진을 선택합니다.</span></label>
   <div id="photoList" class="photo-list"></div>
 </section>
 
